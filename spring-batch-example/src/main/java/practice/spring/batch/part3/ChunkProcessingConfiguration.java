@@ -3,6 +3,7 @@ package practice.spring.batch.part3;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
@@ -30,7 +31,7 @@ public class ChunkProcessingConfiguration {
     }
 
     @Bean
-    public Job chunkProcessingJob(){
+    public Job chunkProcessingJob() {
         return jobBuilderFactory.get("chunkProcessingJob")
                 .incrementer(new RunIdIncrementer())
                 .start(this.taskBaseStep())
@@ -39,9 +40,9 @@ public class ChunkProcessingConfiguration {
     }
 
     @Bean
-    public Step chunkBaseStep(){
+    public Step chunkBaseStep() {
         return stepBuilderFactory.get("chunkBaseStep")
-                .<String,String>chunk(10)
+                .<String, String>chunk(10)
                 .reader(itemReader())
                 .processor(itemProcessor())
                 .writer(itemWriter())
@@ -49,10 +50,11 @@ public class ChunkProcessingConfiguration {
     }
 
     private ItemWriter<String> itemWriter() {
-        return items -> log.info("chunk item size : {}",items.size());
+        return items -> log.info("chunk item size : {}", items.size());
+//        return items -> items.forEach(log::info);
     }
 
-    private ItemProcessor< String, String> itemProcessor() {
+    private ItemProcessor<String, String> itemProcessor() {
         return item -> item + ", Spring Batch";
     }
 
@@ -61,24 +63,38 @@ public class ChunkProcessingConfiguration {
     }
 
     @Bean
-    public Step taskBaseStep(){
+    public Step taskBaseStep() {
         return stepBuilderFactory.get("taskBaseStep")
                 .tasklet(this.tasklet())
                 .build();
     }
 
-    private Tasklet tasklet(){
+    private Tasklet tasklet() {
+        List<String> items = getItems();
         return (contribution, chunkContext) -> {
-            List<String> items = getItems();
-            log.info("task item size : {}", items.size());
+            StepExecution stepExecution = contribution.getStepExecution();
 
-            return RepeatStatus.FINISHED;
+            int chunkSize = 10;
+            int fromIndex = stepExecution.getReadCount();
+            int toIndex = fromIndex + chunkSize;
+
+            if (fromIndex >= items.size()){
+                return RepeatStatus.FINISHED;
+            }
+
+            List<String> subList = items.subList(fromIndex, toIndex);
+
+            log.info("task item size : {}", subList.size());
+
+            stepExecution.setReadCount(toIndex);
+
+            return RepeatStatus.CONTINUABLE;
         };
     }
 
-    private List<String> getItems(){
+    private List<String> getItems() {
         List<String> items = new ArrayList<>();
-        for (int i = 0;i< 100;i++){
+        for (int i = 0; i < 100; i++) {
             items.add(i + " Hello");
         }
 
